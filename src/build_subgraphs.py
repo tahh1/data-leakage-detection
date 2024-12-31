@@ -27,7 +27,7 @@ def create_binary_features(lpd):
       features = lpd.iloc[:,1].to_list()
       features = [set(labels.lower().split()) for labels in features]
       features = mlb.fit_transform(features)
-
+      
       return torch.from_numpy(features).to(torch.float)
 
 
@@ -61,6 +61,20 @@ def build_adj(flow_from_inst,flow_to_inst, unique_instr,unique_vars):
             adj[index][index_mapping[to_vars]]=1
         for from_vars in flow_to_inst[instr]:
             adj[index_mapping[from_vars]][index]=1
+
+    return adj
+
+
+def build_adj_instr_only(flow_from_inst,flow_to_inst, unique_instr,unique_vars):
+
+    adj= np.zeros((len(unique_instr),len(unique_instr)))
+    for index,instr in enumerate(unique_instr):
+        for to_vars in flow_from_inst[instr]:
+            for to_instr in flow_to_inst.keys():
+                if(to_vars in flow_to_inst[to_instr]):
+                    adj[index][index_mapping[to_instr]]=1
+        # for from_vars in flow_to_inst[instr]:
+        #     adj[index_mapping[from_vars]][index]=1
 
     return adj
 
@@ -149,6 +163,8 @@ if __name__=='__main__':
     flow_from_inst={ instr:[] for instr in unique_instr}
     flow_to_inst={instr:[] for instr in unique_instr}
     instr_labels={}
+    instr_loc={}
+    var_loc={}
     var_labels={}
 
     try:
@@ -168,9 +184,12 @@ if __name__=='__main__':
 
     for index,row in FlowVarTransformation.iterrows():
         if(row["InstructionId"] not in instr_labels.keys()):
-                instr_labels[row["InstructionId"]]=' '.join(row["tag"].split()[:2])
+            instr_labels[row["InstructionId"]]=' '.join(row["tag"].split()[:2])
+            print(row["InstructionId"],re.findall(instr_pattern, row["InstructionId"])[0],lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1])
+            instr_loc[row["InstructionId"]] = lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1]
         if re.fullmatch("\[(\$?invo\d+?)?, (\$?invo\d+?)?\]",row["ToId"])==None:
             flow_from_inst[row["InstructionId"]].append(row["ToId"])
+            var_loc[row["ToId"]] = lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1]
         if re.fullmatch("\[(\$?invo\d+?)?, (\$?invo\d+?)?\]",row["FromId"])==None:
             flow_to_inst[row["InstructionId"]].append(row["FromId"])
             if(row["FromId"] not in var_labels.keys()):
@@ -180,8 +199,10 @@ if __name__=='__main__':
     for index,row in FlowVarStoreIndex.iterrows():
         if(row["InstructionId"] not in instr_labels.keys()):
                 instr_labels[row["InstructionId"]]=' '.join(row["tag"].split()[:2])
+                instr_loc[row["InstructionId"]] = lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1]
         if re.fullmatch("\[(\$?invo\d+?)?, (\$?invo\d+?)?\]",row["ToId"])==None:
             flow_from_inst[row["InstructionId"]].append(row["ToId"])
+            var_loc[row["ToId"]] = lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1]
         if re.fullmatch("\[(\$?invo\d+?)?, (\$?invo\d+?)?\]",row["FromId"])==None:
             flow_to_inst[row["InstructionId"]].append(row["FromId"])
             if(row["FromId"] not in var_labels.keys()):
@@ -195,7 +216,7 @@ if __name__=='__main__':
 
     
     adj=build_adj(flow_from_inst,flow_to_inst, unique_instr,unique_vars)
-
+    adj_instr=build_adj_instr_only(flow_from_inst,flow_to_inst, unique_instr,unique_vars)
     del flow_from_inst, flow_to_inst
 
     if not os.path.exists(os.path.join(fact_path,'_graphs')):
@@ -204,19 +225,30 @@ if __name__=='__main__':
     else:
         remove_files(os.path.join(fact_path,'_graphs'))
     graph_paths= os.path.join(fact_path,"_graphs")
+    Adj_df = pd.DataFrame(adj, index=unique_instr+unique_vars, columns=unique_instr+unique_vars)
+    Adj_df_instr = pd.DataFrame(adj_instr, index=unique_instr, columns=unique_instr)
+    print(len(Adj_df_instr))
+    np.transpose(Adj_df).to_csv(os.path.join(graph_paths,"graph_unpruned.csv"))
+    np.transpose(Adj_df_instr).to_csv(os.path.join(graph_paths,"graph_unpruned_instr_only.csv"))
 
 
-    G = dgl.graph(np.where(adj>0))
+    G = dgl.graph(np.where(adj>0), num_nodes=len(adj))
+    G_instr = dgl.graph(np.where(Adj_df_instr>0), num_nodes=len(Adj_df_instr))
+    print(G_instr.num_nodes())
 
 
 
     # Create an empty DataFrame
-    labels = pd.DataFrame(index=range(len(index_mapping)),columns=['Nodes', 'Labels'])
+    labels = pd.DataFrame(index=range(len(index_mapping)),columns=['Nodes', 'Labels', 'Code'])
     for key, value in instr_labels.items():
-        labels.iloc[index_mapping[key]] = {'Nodes': key, 'Labels': value}
+        labels.iloc[index_mapping[key]] = {'Nodes': key, 'Labels': value, 'Code': instr_loc[key] if key in instr_loc.keys() else ""}
     for key, value in var_labels.items():
-        labels.iloc[index_mapping[key]] = {'Nodes': key, 'Labels': value}
+        labels.iloc[index_mapping[key]] = {'Nodes': key, 'Labels': value, 'Code': var_loc[key] if key in var_loc.keys() else ""}
+
     labels.fillna("",inplace=True)
+
+    labels.to_csv(f"{graph_paths}/features_unpruned.csv")
+    labels.iloc[:len(unique_instr)].to_csv(f"{graph_paths}/features_instr_unpruned.csv")
 
     del instr_labels, var_labels
 
@@ -226,25 +258,69 @@ if __name__=='__main__':
         for index,row in df_telemetry_model_pair.iterrows():
             original=row['TrainInvo']+"_"+row['TestInvo']+"_"+row['TrainCtx']+"_"+row['TestCtx']
             pair = [row['TrainInstr'],row['TestInstr']]
-            binary_labels= labels.copy()
+            feature_labels= labels.copy()
             try:
-                binary_labels.iloc[index_mapping[row['TrainInstr']],1]+= ' Train'
-                binary_labels.iloc[index_mapping[row['TestInstr']],1]+= ' Test'
-                binary_labels.iloc[index_mapping[row['TrainVar']],1]+= ' TrainData'
-                binary_labels.iloc[index_mapping[row['TestVar']],1]+= ' TestData'
+                feature_labels.iloc[index_mapping[row['TrainInstr']],1]+= ' Train'
+                feature_labels.iloc[index_mapping[row['TestInstr']],1]+= ' Test'
+                feature_labels.iloc[index_mapping[row['TrainVar']],1]+= ' TrainData'
+                feature_labels.iloc[index_mapping[row['TestVar']],1]+= ' TestData'
             except KeyError:
                 print(f'The model pair [{row["TrainModel"]},{row["TestModel"]}], skipping it...')
                 continue
+            
+            binary_features = create_binary_features(feature_labels)
+            code_embedding = torch.zeros_like(binary_features)#create_code_embedding(feature_labels)
+            print(binary_features.shape,code_embedding.shape)
+            binary_features_instr = binary_features[:len(unique_instr)]
+            code_embedding_instr = code_embedding[:len(unique_instr)]
 
-            features = create_binary_features(binary_labels)
-
-            G.ndata['features']= features
+            #G.ndata['features']= binary_features
+            #G_instr.ndata['features']= binary_features_instr
             original = match_invo(original,injected_invos) if len(injected_invos)>0 else original
 
 
             pair_node_id = list(map(lambda x: index_mapping[x],pair))
+
             sg,_ = dgl.khop_in_subgraph(G, pair_node_id,k=G.num_edges(),relabel_nodes=True)
-            save_graphs(os.path.join(graph_paths,f'{original}.bin'), [sg])
+            sg_instr,_ = dgl.khop_in_subgraph(G_instr, pair_node_id,k=G.num_edges(),relabel_nodes=True)
+
+
+
+            adj_sg = dgl.khop_adj(sg,1)
+            _ID = sg.ndata["_ID"]
+            kept_nodes = [node for index, node in enumerate(unique_instr + unique_vars) if index in _ID]
+            A = pd.DataFrame(adj_sg, index=kept_nodes, columns=kept_nodes)
+            np.transpose(A).to_csv(os.path.join(graph_paths,f"{original}.csv"))
+            feature_labels.iloc[_ID].to_csv(f"{graph_paths}/{original}_features.csv")
+
+            sg.ndata["features"]= torch.cat((binary_features[_ID],code_embedding[_ID]),dim = 1)
+            print(sg,sg.ndata["features"].shape)
+            save_graphs(os.path.join(graph_paths,f'{original}_original_both.bin'), [sg])
+            sg.ndata["features"]= binary_features[_ID]
+            print(sg)
+            save_graphs(os.path.join(graph_paths,f'{original}_original_binary.bin'), [sg])
+            sg.ndata["features"]= code_embedding[_ID]
+            print(sg)
+            save_graphs(os.path.join(graph_paths,f'{original}_original_embeddings.bin'), [sg])
+
+            adj_sg = dgl.khop_adj(sg_instr,1)
+            _ID = sg_instr.ndata["_ID"]
+            kept_nodes = [node for index, node in enumerate(unique_instr + unique_vars) if index in _ID]
+            A = pd.DataFrame(adj_sg, index=kept_nodes, columns=kept_nodes)
+            np.transpose(A).to_csv(os.path.join(graph_paths,f"{original}_inst.csv"))
+            feature_labels.iloc[_ID].to_csv(f"{graph_paths}/{original}_inst_features.csv")
+
+            sg_instr.ndata["features"]= torch.cat((binary_features_instr[_ID],code_embedding_instr[_ID]),dim=1)
+            print(sg_instr)
+            save_graphs(os.path.join(graph_paths,f'{original}_instr_both.bin'), [sg])
+            sg_instr.ndata["features"]= binary_features_instr[_ID]
+            print(sg_instr)
+            save_graphs(os.path.join(graph_paths,f'{original}_instr_binary.bin'), [sg])
+            sg_instr.ndata["features"]= code_embedding_instr[_ID]
+            print(sg_instr)
+            save_graphs(os.path.join(graph_paths,f'{original}_instr_embeddings.bin'), [sg])
+            
+            
 
 
 
