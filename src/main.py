@@ -11,6 +11,10 @@ from . import factgen
 from .irgen import CodeTransformer
 from .config import configs
 from .utils import remove_files
+from .build_subgraphs import build_subgraphs
+from tokenizers import Tokenizer
+import sent2vec
+from .singleton_loader import ModelLoader
 
 
 
@@ -142,7 +146,11 @@ def main(input_path):
         print("Failed to analyze: " + input_path)
         return "Failed to analyze" 
         
-    build_graphs(fact_path=fact_path,input_path=ir_path)
+    loader = ModelLoader()
+    tokenizer = loader.tokenizer
+    model = loader.sent2vec_model
+        
+    build_subgraphs(fact_path=fact_path,file_path=ir_path,tokenizer=tokenizer,sent2vec_model=model)
     
     print("Success!\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t".format(t[0]+t[1]+t[3]+t[4], t[2], t[5], sum(t)))
     return t

@@ -10,7 +10,7 @@ import re
 import dgl
 import networkx as nx
 from dgl.data.utils import save_graphs
-from utils import remove_files
+from .utils import remove_files
 
 def create_binary_features(lpd):
     
@@ -50,10 +50,16 @@ def extract_instr_and_vars(FlowVarTransformation,FlowVarStoreIndex):
 
     return unique_instr,unique_vars,index_mapping
 
+def create_code_embeddings(df,tokenizer,sent2vec_model):
+     features = list(map(lambda code: code.strip(),df.iloc[:,2].to_list()))
+     #print(features)
+     lines_content_tokenized = [tokenizer.encode(line).tokens for line in features]
+     #print(lines_content_tokenized)
+     code_embeddings = [sent2vec_model.embed_sentence(" ".join(line_content_tokenized))[0] for line_content_tokenized in lines_content_tokenized]
+     return torch.from_numpy(np.array(code_embeddings)).to(torch.float)
 
 
-
-def build_adj(flow_from_inst,flow_to_inst, unique_instr,unique_vars):
+def build_adj(flow_from_inst,flow_to_inst, unique_instr,unique_vars,index_mapping):
 
     adj= np.zeros((len(unique_instr)+len(unique_vars),len(unique_instr)+len(unique_vars)))
     for index,instr in enumerate(unique_instr):
@@ -65,7 +71,7 @@ def build_adj(flow_from_inst,flow_to_inst, unique_instr,unique_vars):
     return adj
 
 
-def build_adj_instr_only(flow_from_inst,flow_to_inst, unique_instr,unique_vars):
+def build_adj_instr_only(flow_from_inst,flow_to_inst, unique_instr,unique_vars,index_mapping):
 
     adj= np.zeros((len(unique_instr),len(unique_instr)))
     for index,instr in enumerate(unique_instr):
@@ -122,11 +128,11 @@ def match_invo(label,injected_invos):
 
 
 
-if __name__=='__main__':
+def build_subgraphs(fact_path,file_path,tokenizer,sent2vec_model):
 
 
-    fact_path= sys.argv[1]
-    file_path= sys.argv[2]
+    #fact_path= sys.argv[1]
+    #file_path= sys.argv[2]
     
     FlowVarTransformation= read_csv_or_empty(fact_path,"FLowVarTransformation.csv")
     FlowVarStoreIndex= read_csv_or_empty(fact_path,"FLowVarStoreIndex.csv")
@@ -185,7 +191,7 @@ if __name__=='__main__':
     for index,row in FlowVarTransformation.iterrows():
         if(row["InstructionId"] not in instr_labels.keys()):
             instr_labels[row["InstructionId"]]=' '.join(row["tag"].split()[:2])
-            print(row["InstructionId"],re.findall(instr_pattern, row["InstructionId"])[0],lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1])
+            #print(row["InstructionId"],re.findall(instr_pattern, row["InstructionId"])[0],lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1])
             instr_loc[row["InstructionId"]] = lines[int(re.findall(instr_pattern, row["InstructionId"])[0])-1]
         if re.fullmatch("\[(\$?invo\d+?)?, (\$?invo\d+?)?\]",row["ToId"])==None:
             flow_from_inst[row["InstructionId"]].append(row["ToId"])
@@ -215,8 +221,8 @@ if __name__=='__main__':
 
 
     
-    adj=build_adj(flow_from_inst,flow_to_inst, unique_instr,unique_vars)
-    adj_instr=build_adj_instr_only(flow_from_inst,flow_to_inst, unique_instr,unique_vars)
+    adj=build_adj(flow_from_inst,flow_to_inst, unique_instr,unique_vars,index_mapping)
+    adj_instr=build_adj_instr_only(flow_from_inst,flow_to_inst, unique_instr,unique_vars,index_mapping)
     del flow_from_inst, flow_to_inst
 
     if not os.path.exists(os.path.join(fact_path,'_graphs')):
@@ -254,6 +260,10 @@ if __name__=='__main__':
 
     if(df_telemetry_model_pair.empty==False):
         injected_invos = list(map(lambda x : int(re.search("\d+", x).group()), df_injected["Invocation"])) if df_injected.empty == False else []
+        print("embedding code...")
+        code_embedding = create_code_embeddings(labels,tokenizer,sent2vec_model)
+        print(code_embedding.shape)
+        code_embedding_instr = code_embedding[:len(unique_instr)]
 
         for index,row in df_telemetry_model_pair.iterrows():
             original=row['TrainInvo']+"_"+row['TestInvo']+"_"+row['TrainCtx']+"_"+row['TestCtx']
@@ -269,10 +279,9 @@ if __name__=='__main__':
                 continue
             
             binary_features = create_binary_features(feature_labels)
-            code_embedding = torch.zeros_like(binary_features)#create_code_embedding(feature_labels)
             print(binary_features.shape,code_embedding.shape)
             binary_features_instr = binary_features[:len(unique_instr)]
-            code_embedding_instr = code_embedding[:len(unique_instr)]
+            
 
             #G.ndata['features']= binary_features
             #G_instr.ndata['features']= binary_features_instr
