@@ -290,27 +290,27 @@ def build_subgraphs(fact_path,file_path,tokenizer,sent2vec_model):
 
             pair_node_id = list(map(lambda x: index_mapping[x],pair))
 
-            sg,_ = dgl.khop_in_subgraph(G, pair_node_id,k=G.num_edges(),relabel_nodes=True)
+            # sg,_ = dgl.khop_in_subgraph(G, pair_node_id,k=G.num_edges(),relabel_nodes=True)
             sg_instr,_ = dgl.khop_in_subgraph(G_instr, pair_node_id,k=G.num_edges(),relabel_nodes=True)
 
 
 
-            adj_sg = dgl.khop_adj(sg,1)
-            _ID = sg.ndata["_ID"]
-            kept_nodes = [node for index, node in enumerate(unique_instr + unique_vars) if index in _ID]
-            A = pd.DataFrame(adj_sg, index=kept_nodes, columns=kept_nodes)
-            np.transpose(A).to_csv(os.path.join(graph_paths,f"{original}.csv"))
-            feature_labels.iloc[_ID].to_csv(f"{graph_paths}/{original}_features.csv")
+            # adj_sg = dgl.khop_adj(sg,1)
+            # _ID = sg.ndata["_ID"]
+            # kept_nodes = [node for index, node in enumerate(unique_instr + unique_vars) if index in _ID]
+            # A = pd.DataFrame(adj_sg, index=kept_nodes, columns=kept_nodes)
+            # np.transpose(A).to_csv(os.path.join(graph_paths,f"{original}.csv"))
+            # feature_labels.iloc[_ID].to_csv(f"{graph_paths}/{original}_features.csv")
 
-            sg.ndata["features"]= torch.cat((binary_features[_ID],code_embedding[_ID]),dim = 1)
-            print(sg,sg.ndata["features"].shape)
-            save_graphs(os.path.join(graph_paths,f'{original}_original_both.bin'), [sg])
-            sg.ndata["features"]= binary_features[_ID]
-            print(sg)
-            save_graphs(os.path.join(graph_paths,f'{original}_original_binary.bin'), [sg])
-            sg.ndata["features"]= code_embedding[_ID]
-            print(sg)
-            save_graphs(os.path.join(graph_paths,f'{original}_original_embeddings.bin'), [sg])
+            #sg.ndata["features"]= torch.cat((binary_features[_ID],code_embedding[_ID]),dim = 1)
+            #print(sg,sg.ndata["features"].shape)
+            #save_graphs(os.path.join(graph_paths,f'{original}_original_both.bin'), [sg])
+            #sg.ndata["features"]= binary_features[_ID]
+            # print(sg)
+            # save_graphs(os.path.join(graph_paths,f'{original}_original_binary.bin'), [sg])
+            # sg.ndata["features"]= code_embedding[_ID]
+            # print(sg)
+            # save_graphs(os.path.join(graph_paths,f'{original}_original_embeddings.bin'), [sg])
 
             adj_sg = dgl.khop_adj(sg_instr,1)
             _ID = sg_instr.ndata["_ID"]
@@ -321,13 +321,13 @@ def build_subgraphs(fact_path,file_path,tokenizer,sent2vec_model):
 
             sg_instr.ndata["features"]= torch.cat((binary_features_instr[_ID],code_embedding_instr[_ID]),dim=1)
             print(sg_instr)
-            save_graphs(os.path.join(graph_paths,f'{original}_instr_both.bin'), [sg])
+            save_graphs(os.path.join(graph_paths,f'{original}_instr_both.bin'), [sg_instr])
             sg_instr.ndata["features"]= binary_features_instr[_ID]
             print(sg_instr)
-            save_graphs(os.path.join(graph_paths,f'{original}_instr_binary.bin'), [sg])
+            save_graphs(os.path.join(graph_paths,f'{original}_instr_binary.bin'), [sg_instr])
             sg_instr.ndata["features"]= code_embedding_instr[_ID]
             print(sg_instr)
-            save_graphs(os.path.join(graph_paths,f'{original}_instr_embeddings.bin'), [sg])
+            save_graphs(os.path.join(graph_paths,f'{original}_instr_embeddings.bin'), [sg_instr])
             
             
 
